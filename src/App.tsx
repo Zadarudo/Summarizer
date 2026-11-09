@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ChangeEvent } from "react";
 import { readPklFile } from "./lib/pkl-parse";
+import { clearSession, loadSession, saveSession } from "./lib/pkl-session";
 import { summarize, type Dataset } from "./lib/pkl-core";
 import SummaryCards from "./components/SummaryCards";
 import { YearChart, TopLists } from "./components/Insights";
@@ -9,8 +10,10 @@ import EndingSoon from "./components/EndingSoon";
 import InternTable, { emptyFilters, type Filters } from "./components/InternTable";
 
 export default function App() {
-  const [data, setData] = useState<Dataset | null>(null);
-  const [fileInfo, setFileInfo] = useState("");
+  // If the tab was just refreshed, the data is restored from this tab's session (erased when the tab closes).
+  const [restored] = useState(() => loadSession());
+  const [data, setData] = useState<Dataset | null>(restored?.data ?? null);
+  const [fileInfo, setFileInfo] = useState(restored?.fileInfo ?? "");
   const [error, setError] = useState("");
   const [filters, setFilters] = useState<Filters>(emptyFilters);
 
@@ -19,13 +22,23 @@ export default function App() {
     if (!file) return;
     setError("");
     try {
-      setData(await readPklFile(file));
+      const dataset = await readPklFile(file);
+      const info = `${file.name}, file last saved ${new Date(file.lastModified).toLocaleDateString("en-GB")}`;
+      setData(dataset);
       setFilters(emptyFilters);
-      setFileInfo(`${file.name}, file last saved ${new Date(file.lastModified).toLocaleDateString("en-GB")}`);
+      setFileInfo(info);
+      saveSession(dataset, info);
     } catch (err) {
       setError((err as Error).message);
     }
     e.target.value = ""; // lets the same file be chosen again after it changes
+  }
+
+  function onClear() {
+    clearSession();
+    setData(null);
+    setFileInfo("");
+    setFilters(emptyFilters);
   }
 
   const summary = useMemo(() => (data ? summarize(data.interns) : null), [data]);
@@ -38,10 +51,17 @@ export default function App() {
             <h1 className="text-2xl font-semibold text-black">PKL interns</h1>
             <p className="text-sm text-slate-500">{data ? fileInfo : "Upload the master Excel file to begin."}</p>
           </div>
-          <label className="cursor-pointer rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white focus-within:ring-2 focus-within:ring-slate-900 focus-within:ring-offset-2 hover:bg-slate-700">
-            {data ? "Upload a newer file" : "Choose Excel file"}
-            <input type="file" accept=".xlsx,.xls,.csv" onChange={onFile} className="sr-only" />
-          </label>
+          <div className="flex items-center gap-2">
+            {data && (
+              <button type="button" onClick={onClear} className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">
+                Clear data
+              </button>
+            )}
+            <label className="cursor-pointer rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white focus-within:ring-2 focus-within:ring-slate-900 focus-within:ring-offset-2 hover:bg-slate-700">
+              {data ? "Upload a newer file" : "Choose Excel file"}
+              <input type="file" accept=".xlsx,.xls,.csv" onChange={onFile} className="sr-only" />
+            </label>
+          </div>
         </header>
 
         {error && <p role="alert" className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
